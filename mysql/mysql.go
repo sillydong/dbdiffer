@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/sillydong/dbdiff/dbdiff"
+	"github.com/sillydong/dbdiff"
 )
 
 type Driver struct {
