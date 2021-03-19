@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/sillydong/dbdiff"
+	"github.com/sillydong/dbdiffer"
 )
 
 type Driver struct {
@@ -16,7 +16,7 @@ type Driver struct {
 
 // New creates a new Driver driver.
 // The DSN is documented here: https://github.com/go-sql-driver/mysql#dsn-data-source-name
-func New(newDsn, oldDsn string) (dbdiff.Differ, error) {
+func New(newDsn, oldDsn string) (dbdiffer.Differ, error) {
 	parsedNewDSN, err := mysql.ParseDSN(newDsn)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func New(newDsn, oldDsn string) (dbdiff.Differ, error) {
 }
 
 // NewFromDB returns a mysql driver from a sql.DB
-func NewFromDB(newDb, oldDb *sql.DB) (dbdiff.Differ, error) {
+func NewFromDB(newDb, oldDb *sql.DB) (dbdiffer.Differ, error) {
 	if _, ok := newDb.Driver().(*mysql.MySQLDriver); !ok {
 		return nil, errors.New("new database instance is not using the MySQL driver")
 	}
@@ -90,14 +90,14 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
+func (d *Driver) Diff(prefix string) (diff *dbdiffer.Result, err error) {
 	//retrive new database structure
-	newtables, err := tables(d.newDb)
+	newtables, err := tables(d.newDb, prefix)
 	if err != nil {
 		return nil, err
 	}
-	newtablefields := make(map[string]map[string]dbdiff.Field, len(newtables))
-	newtableindexes := make(map[string]map[string]dbdiff.Index, len(newtables))
+	newtablefields := make(map[string]map[string]dbdiffer.Field, len(newtables))
+	newtableindexes := make(map[string]map[string]dbdiffer.Index, len(newtables))
 	for _, table := range newtables {
 		newtablefields[table.Name], err = fields(d.newDb, table.Name)
 		if err != nil {
@@ -110,12 +110,12 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 	}
 
 	//retrive old database structure
-	oldtables, err := tables(d.oldDb)
+	oldtables, err := tables(d.oldDb, prefix)
 	if err != nil {
 		return nil, err
 	}
-	oldtablefields := make(map[string]map[string]dbdiff.Field, len(oldtables))
-	oldtableindexes := make(map[string]map[string]dbdiff.Index, len(oldtables))
+	oldtablefields := make(map[string]map[string]dbdiffer.Field, len(oldtables))
+	oldtableindexes := make(map[string]map[string]dbdiffer.Index, len(oldtables))
 	for _, table := range oldtables {
 		oldtablefields[table.Name], err = fields(d.oldDb, table.Name)
 		if err != nil {
@@ -128,37 +128,37 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 	}
 
 	//compare
-	result := dbdiff.Result{
+	result := dbdiffer.Result{
 		Tables: struct {
-			Drop   map[string]dbdiff.Table
-			Create map[string]dbdiff.Table
+			Drop   map[string]dbdiffer.Table
+			Create map[string]dbdiffer.Table
 			Change map[string]map[string]string
 		}{
-			Drop:   map[string]dbdiff.Table{},
-			Create: map[string]dbdiff.Table{},
+			Drop:   map[string]dbdiffer.Table{},
+			Create: map[string]dbdiffer.Table{},
 			Change: map[string]map[string]string{},
 		},
 		Fields: struct {
-			Create map[string]map[string]dbdiff.Field
-			Drop   map[string]map[string]dbdiff.Field
-			Change map[string]map[string]dbdiff.Field
-			Add    map[string]map[string]dbdiff.Field
+			Create map[string]map[string]dbdiffer.Field
+			Drop   map[string]map[string]dbdiffer.Field
+			Change map[string]map[string]dbdiffer.Field
+			Add    map[string]map[string]dbdiffer.Field
 		}{
-			Create: map[string]map[string]dbdiff.Field{},
-			Drop:   map[string]map[string]dbdiff.Field{},
-			Change: map[string]map[string]dbdiff.Field{},
-			Add:    map[string]map[string]dbdiff.Field{},
+			Create: map[string]map[string]dbdiffer.Field{},
+			Drop:   map[string]map[string]dbdiffer.Field{},
+			Change: map[string]map[string]dbdiffer.Field{},
+			Add:    map[string]map[string]dbdiffer.Field{},
 		},
 		Indexes: struct {
-			Create map[string]map[string]dbdiff.Index
-			Change map[string]map[string]dbdiff.Index
-			Add    map[string]map[string]dbdiff.Index
-			Drop   map[string]map[string]dbdiff.Index
+			Create map[string]map[string]dbdiffer.Index
+			Change map[string]map[string]dbdiffer.Index
+			Add    map[string]map[string]dbdiffer.Index
+			Drop   map[string]map[string]dbdiffer.Index
 		}{
-			Create: map[string]map[string]dbdiff.Index{},
-			Change: map[string]map[string]dbdiff.Index{},
-			Add:    map[string]map[string]dbdiff.Index{},
-			Drop:   map[string]map[string]dbdiff.Index{},
+			Create: map[string]map[string]dbdiffer.Index{},
+			Change: map[string]map[string]dbdiffer.Index{},
+			Add:    map[string]map[string]dbdiffer.Index{},
+			Drop:   map[string]map[string]dbdiffer.Index{},
 		},
 	}
 
@@ -209,7 +209,7 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 				if _, exists := newindexes[indexname]; !exists {
 					//索引在新表中不存在， 删除索引
 					if result.Indexes.Drop[tablename] == nil {
-						result.Indexes.Drop[tablename] = map[string]dbdiff.Index{}
+						result.Indexes.Drop[tablename] = map[string]dbdiffer.Index{}
 					}
 					result.Indexes.Drop[tablename][indexname] = indexdetail
 				}
@@ -217,7 +217,7 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 		} else {
 			if _, exists := result.Tables.Drop[tablename]; !exists {
 				//如果表不被删除，则单独删除这个表的这些索引
-				result.Indexes.Drop[tablename] = map[string]dbdiff.Index{}
+				result.Indexes.Drop[tablename] = map[string]dbdiffer.Index{}
 				for indexname, indexdetail := range oldindexes {
 					result.Indexes.Drop[tablename][indexname] = indexdetail
 				}
@@ -232,19 +232,19 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 					if !indexdetail.Equal(&oldindex) {
 						//删除旧索引
 						if result.Indexes.Drop[tablename] == nil {
-							result.Indexes.Drop[tablename] = map[string]dbdiff.Index{}
+							result.Indexes.Drop[tablename] = map[string]dbdiffer.Index{}
 						}
 						result.Indexes.Drop[tablename][indexname] = oldindex
 						//创建新索引
 						if result.Indexes.Add[tablename] == nil {
-							result.Indexes.Add[tablename] = map[string]dbdiff.Index{}
+							result.Indexes.Add[tablename] = map[string]dbdiffer.Index{}
 						}
 						result.Indexes.Add[tablename][indexname] = oldindex
 					}
 				} else {
 					//需要添加的索引
 					if result.Indexes.Add[tablename] == nil {
-						result.Indexes.Add[tablename] = map[string]dbdiff.Index{}
+						result.Indexes.Add[tablename] = map[string]dbdiffer.Index{}
 					}
 					result.Indexes.Add[tablename][indexname] = indexdetail
 				}
@@ -259,7 +259,7 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 				if _, exists := newfields[fieldname]; !exists {
 					//删除字段
 					if result.Fields.Drop[tablename] == nil {
-						result.Fields.Drop[tablename] = map[string]dbdiff.Field{}
+						result.Fields.Drop[tablename] = map[string]dbdiffer.Field{}
 					}
 					result.Fields.Drop[tablename][fieldname] = field
 				}
@@ -274,7 +274,7 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 					//字段存在，对比内容
 					if !field.Equal(&oldfield) {
 						if result.Fields.Change[tablename] == nil {
-							result.Fields.Change[tablename] = map[string]dbdiff.Field{}
+							result.Fields.Change[tablename] = map[string]dbdiffer.Field{}
 						}
 						result.Fields.Change[tablename][fieldname] = field
 					}
@@ -282,7 +282,7 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 					//字段不存在，添加字段
 					field.After = lastfield
 					if result.Fields.Add[tablename] == nil {
-						result.Fields.Add[tablename] = map[string]dbdiff.Field{}
+						result.Fields.Add[tablename] = map[string]dbdiffer.Field{}
 					}
 					result.Fields.Add[tablename][fieldname] = field
 				}
@@ -293,7 +293,7 @@ func (d *Driver) Diff() (diff *dbdiff.Result, err error) {
 	return &result, nil
 }
 
-func (d *Driver) Generate(result *dbdiff.Result) ([]string, error) {
+func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	sqls := make([]string, 0)
 	if result.IsEmpty() {
 		return sqls, nil
@@ -391,14 +391,19 @@ func (d *Driver) Generate(result *dbdiff.Result) ([]string, error) {
 	return sqls, nil
 }
 
-func tables(db *sql.DB) (map[string]dbdiff.Table, error) {
-	resultrows, err := db.Query("SHOW TABLE STATUS;")
+func tables(db *sql.DB, prefix string) (map[string]dbdiffer.Table, error) {
+	query := "SHOW TABLE STATUS;"
+	if prefix != "" {
+		query = "SHOW TABLE STATUS LIKE '" + prefix + "%';"
+	}
+	resultrows, err := db.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer resultrows.Close()
-	tables := make(map[string]dbdiff.Table, 0)
+	tables := make(map[string]dbdiffer.Table)
 	for resultrows.Next() {
+
 		var (
 			name            string
 			engine          string
@@ -422,7 +427,7 @@ func tables(db *sql.DB) (map[string]dbdiff.Table, error) {
 		if err := resultrows.Scan(&name, &engine, &version, &row_format, &rows, &avg_row_length, &data_length, &max_data_length, &index_length, &data_free, &auto_increment, &create_time, &update_time, &check_time, &collection, &checksum, &create_options, &comment); err != nil {
 			return nil, err
 		}
-		tables[name] = dbdiff.Table{
+		tables[name] = dbdiffer.Table{
 			Name:      name,
 			Engine:    engine,
 			Version:   version,
@@ -434,13 +439,13 @@ func tables(db *sql.DB) (map[string]dbdiff.Table, error) {
 	return tables, nil
 }
 
-func fields(db *sql.DB, table string) (map[string]dbdiff.Field, error) {
+func fields(db *sql.DB, table string) (map[string]dbdiffer.Field, error) {
 	resultrows, err := db.Query("SHOW FULL FIELDS FROM `" + table + "`;")
 	if err != nil {
 		return nil, err
 	}
 	defer resultrows.Close()
-	fields := make(map[string]dbdiff.Field, 0)
+	fields := make(map[string]dbdiffer.Field, 0)
 	for resultrows.Next() {
 		var (
 			field      string
@@ -456,7 +461,7 @@ func fields(db *sql.DB, table string) (map[string]dbdiff.Field, error) {
 		if err := resultrows.Scan(&field, &typ, &collation, &null, &key, &def, &extra, &privileges, &comment); err != nil {
 			return nil, err
 		}
-		fields[field] = dbdiff.Field{
+		fields[field] = dbdiffer.Field{
 			Field:     field,
 			Type:      typ,
 			Collation: collation,
@@ -470,13 +475,13 @@ func fields(db *sql.DB, table string) (map[string]dbdiff.Field, error) {
 	return fields, nil
 }
 
-func indexes(db *sql.DB, table string) (map[string]dbdiff.Index, error) {
+func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
 	resultrows, err := db.Query("SHOW INDEX FROM `" + table + "`;")
 	if err != nil {
 		return nil, err
 	}
 	defer resultrows.Close()
-	indexes := make(map[string]dbdiff.Index, 0)
+	indexes := make(map[string]dbdiffer.Index, 0)
 	for resultrows.Next() {
 		var (
 			table         string
@@ -500,7 +505,7 @@ func indexes(db *sql.DB, table string) (map[string]dbdiff.Index, error) {
 			idx.ColumnName = append(idx.ColumnName, column_name)
 			indexes[key_name] = idx
 		} else {
-			indexes[key_name] = dbdiff.Index{
+			indexes[key_name] = dbdiffer.Index{
 				Table:        table,
 				NonUnique:    non_unique,
 				KeyName:      key_name,

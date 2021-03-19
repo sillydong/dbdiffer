@@ -1,4 +1,4 @@
-package dbdiff
+package dbdiffer
 
 import (
 	"reflect"
@@ -6,7 +6,7 @@ import (
 
 type Differ interface {
 	Close() error
-	Diff() (*Result, error)
+	Diff(prefix string) (*Result, error)
 	Generate(*Result) ([]string, error)
 }
 

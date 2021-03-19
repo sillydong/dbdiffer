@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestTables(t *testing.T) {
-	tb, err := tables(db)
+	tb, err := tables(db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := differ.Diff()
+	res, err := differ.Diff("")
 	if err != nil {
 		t.Fatal(err)
 	}
