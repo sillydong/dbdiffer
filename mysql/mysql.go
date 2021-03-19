@@ -497,8 +497,10 @@ func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
 			index_type    string
 			comment       string
 			index_comment string
+			visible       string
+			expression    *string
 		)
-		if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment); err != nil {
+		if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment, &visible, &expression); err != nil {
 			return nil, err
 		}
 		if idx, exist := indexes[key_name]; exist {
