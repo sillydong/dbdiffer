@@ -3,6 +3,7 @@ package mysql
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
@@ -299,7 +300,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 		return sqls, nil
 	}
 	if len(result.Tables.Drop) > 0 {
-		for tablename, _ := range result.Tables.Drop {
+		for tablename := range result.Tables.Drop {
 			sqls = append(sqls, "DROP TABLE `"+tablename+"`;")
 		}
 	}
@@ -346,7 +347,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	}
 	if len(result.Indexes.Drop) > 0 {
 		for tablename, indexes := range result.Indexes.Drop {
-			for name, _ := range indexes {
+			for name := range indexes {
 				if name == "PRIMARY" {
 					sqls = append(sqls, "ALTER TABLE `"+tablename+"` DROP PRIMARY KEY;")
 				} else {
@@ -357,7 +358,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	}
 	if len(result.Fields.Drop) > 0 {
 		for tablename, fields := range result.Fields.Drop {
-			for name, _ := range fields {
+			for name := range fields {
 				sqls = append(sqls, "ALTER TABLE `"+tablename+"` DROP `"+name+"`;")
 			}
 		}
@@ -481,7 +482,15 @@ func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
 		return nil, err
 	}
 	defer resultrows.Close()
-	indexes := make(map[string]dbdiffer.Index, 0)
+	columns, err := resultrows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	column_len := len(columns)
+	if column_len != 13 && column_len != 15 {
+		return nil, fmt.Errorf("returned %d columns while listing index", len(columns))
+	}
+	indexes := make(map[string]dbdiffer.Index)
 	for resultrows.Next() {
 		var (
 			table         string
@@ -500,9 +509,17 @@ func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
 			visible       string
 			expression    *string
 		)
-		if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment, &visible, &expression); err != nil {
-			return nil, err
+		switch column_len {
+		case 13:
+			if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment); err != nil {
+				return nil, err
+			}
+		case 15:
+			if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment, &visible, &expression); err != nil {
+				return nil, err
+			}
 		}
+
 		if idx, exist := indexes[key_name]; exist {
 			idx.ColumnName = append(idx.ColumnName, column_name)
 			indexes[key_name] = idx
