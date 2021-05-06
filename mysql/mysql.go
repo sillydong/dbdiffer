@@ -320,7 +320,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 					if index.KeyName == "PRIMARY" {
 						fieldstr = append(fieldstr, " PRIMARY KEY (`"+strings.Join(index.ColumnName, "`, `")+"`)")
 					} else {
-						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` ("+strings.Join(index.ColumnName, "`, `")+"`)")
+						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` (`"+strings.Join(index.ColumnName, "`, `")+"`)")
 					}
 				}
 			}
@@ -552,20 +552,30 @@ func sqlnull(s string) string {
 }
 
 func sqldefault(s *string) string {
+	var (
+		CurrentTimeStamp = "CURRENT_TIMESTAMP"
+	)
 	switch s {
 	case nil:
 		return ""
+	case &CurrentTimeStamp:
+		return " DEFAULT CURRENT_TIMESTAMP"
 	default:
 		return " DEFAULT '" + escape(*s) + "'"
 	}
 }
 
 func sqlextra(s string) string {
+	var (
+		AutoIncrement = "auto_increment"
+	)
 	switch s {
 	case "":
 		return ""
+	case AutoIncrement:
+		return " "  + AutoIncrement
 	default:
-		return " " + strings.ToUpper(s)
+		return ""
 	}
 }
 
