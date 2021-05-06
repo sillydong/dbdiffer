@@ -320,12 +320,12 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 					if index.KeyName == "PRIMARY" {
 						fieldstr = append(fieldstr, " PRIMARY KEY (`"+strings.Join(index.ColumnName, "`, `")+"`)")
 					} else {
-						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` ("+strings.Join(index.ColumnName, "`, `"))
+						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` ("+strings.Join(index.ColumnName, "`, `")+"`)")
 					}
 				}
 			}
 			chars := strings.Split(tabledetail.Collation, "_")
-			sql += strings.Join(fieldstr, ", ") + ") ENGINE = " + tabledetail.Engine + " DEFAULT CHATSET = " + chars[0]
+			sql += strings.Join(fieldstr, ", ") + ") ENGINE = " + tabledetail.Engine + " DEFAULT CHARSET = " + chars[0]
 			sqls = append(sqls, sql+";")
 		}
 	}
@@ -435,6 +435,7 @@ func tables(db *sql.DB, prefix string) (map[string]dbdiffer.Table, error) {
 			RowFormat: row_format,
 			Options:   create_options,
 			Comment:   comment,
+			Collation: collection,
 		}
 	}
 	return tables, nil
