@@ -316,7 +316,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 			sql := "CREATE TABLE `" + tablename + "` ("
 			fieldstr := make([]string, 0)
 			for _, field := range fields {
-				fieldstr = append(fieldstr, "`"+field.Field+"` "+strings.ToUpper(field.Type)+sqlnull(field.Null)+sqldefault(*field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment))
+				fieldstr = append(fieldstr, "`"+field.Field+"` "+strings.ToUpper(field.Type)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment))
 			}
 			if indexes, exists := result.Indexes.Create[tablename]; exists {
 				for _, index := range indexes {
@@ -369,7 +369,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	if len(result.Fields.Add) > 0 {
 		for tablename, fields := range result.Fields.Add {
 			for name, detail := range fields {
-				sqls = append(sqls, "ALTER TABLE `"+tablename+"` ADD `"+name+"` "+strings.ToUpper(detail.Type)+sqlcol(detail.Collation)+sqlnull(detail.Null)+sqldefault(*detail.Default)+sqlextra(detail.Extra)+sqlcomment(detail.Comment)+" AFTER `"+detail.After+"`;")
+				sqls = append(sqls, "ALTER TABLE `"+tablename+"` ADD `"+name+"` "+strings.ToUpper(detail.Type)+sqlcol(detail.Collation)+sqlnull(detail.Null)+sqldefault(detail.Default)+sqlextra(detail.Extra)+sqlcomment(detail.Comment)+" AFTER `"+detail.After+"`;")
 			}
 		}
 	}
@@ -387,7 +387,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	if len(result.Fields.Change) > 0 {
 		for tablename, fields := range result.Fields.Change {
 			for name, detail := range fields {
-				sqls = append(sqls, "ALTER TABLE `"+tablename+"` CHANGE `"+name+"` `"+name+"` "+strings.ToUpper(detail.Type)+sqlcol(detail.Collation)+sqlnull(detail.Null)+sqldefault(*detail.Default)+sqlextra(detail.Extra)+sqlcomment(detail.Comment)+";")
+				sqls = append(sqls, "ALTER TABLE `"+tablename+"` CHANGE `"+name+"` `"+name+"` "+strings.ToUpper(detail.Type)+sqlcol(detail.Collation)+sqlnull(detail.Null)+sqldefault(detail.Default)+sqlextra(detail.Extra)+sqlcomment(detail.Comment)+";")
 			}
 		}
 	}
@@ -554,17 +554,17 @@ func sqlnull(s string) string {
 	}
 }
 
-func sqldefault(s string) string {
-	if s == "" {
+func sqldefault(s *string) string {
+	if s == nil {
 		return ""
 	}
-	if val, exists := ExistInArray(s, defaultStrWithoutQuote); exists {
+	if val, exists := existInArray(*s, defaultStrWithoutQuote); exists {
 		return " DEFAULT " + val
 	}
-	return " DEFAULT '" + escape(s) + "'"
+	return " DEFAULT '" + escape(*s) + "'"
 }
 
-func ExistInArray(s string, strArray[] string) (val string, exists bool) {
+func existInArray(s string, strArray[] string) (val string, exists bool) {
 	for _, obj := range strArray {
 		if strings.EqualFold(obj, s) {
 			return obj, true
@@ -575,7 +575,7 @@ func ExistInArray(s string, strArray[] string) (val string, exists bool) {
 }
 
 func sqlextra(s string) string {
-	if val, exists := ExistInArray(s, extra); exists {
+	if val, exists := existInArray(s, extra); exists {
 		return " " + val
 	}
 	return ""
