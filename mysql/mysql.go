@@ -15,6 +15,9 @@ type Driver struct {
 	oldDb *sql.DB
 }
 
+var DefaultStrWithoutQuote = []string{"CURRENT_TIMESTAMP"}
+var Extra = []string{"auto_increment"}
+
 // New creates a new Driver driver.
 // The DSN is documented here: https://github.com/go-sql-driver/mysql#dsn-data-source-name
 func New(newDsn, oldDsn string) (dbdiffer.Differ, error) {
@@ -552,31 +555,30 @@ func sqlnull(s string) string {
 }
 
 func sqldefault(s *string) string {
-	var (
-		CurrentTimeStamp = "CURRENT_TIMESTAMP"
-	)
-	switch s {
-	case nil:
+	if s == nil {
 		return ""
-	case &CurrentTimeStamp:
-		return " DEFAULT CURRENT_TIMESTAMP"
-	default:
-		return " DEFAULT '" + escape(*s) + "'"
 	}
+	if val, exists := ExistInArray(s, DefaultStrWithoutQuote); exists {
+		return " DEFAULT " + val
+	}
+	return " DEFAULT '" + escape(*s) + "'"
+}
+
+func ExistInArray(s *string, strArray[] string) (val string, exists bool) {
+	for _, obj := range strArray {
+		if obj == *s {
+			return obj, true
+		}
+	}
+
+	return "", false
 }
 
 func sqlextra(s string) string {
-	var (
-		AutoIncrement = "auto_increment"
-	)
-	switch s {
-	case "":
-		return ""
-	case AutoIncrement:
-		return " "  + AutoIncrement
-	default:
-		return ""
+	if val, exists := ExistInArray(&s, Extra); exists {
+		return " " + val
 	}
+	return ""
 }
 
 func sqlcomment(s string) string {
