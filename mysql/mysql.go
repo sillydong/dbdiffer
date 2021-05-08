@@ -15,6 +15,9 @@ type Driver struct {
 	oldDb *sql.DB
 }
 
+var defaultStrWithoutQuote = []string{"CURRENT_TIMESTAMP"}
+var extra = []string{"auto_increment"}
+
 // New creates a new Driver driver.
 // The DSN is documented here: https://github.com/go-sql-driver/mysql#dsn-data-source-name
 func New(newDsn, oldDsn string) (dbdiffer.Differ, error) {
@@ -320,7 +323,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 					if index.KeyName == "PRIMARY" {
 						fieldstr = append(fieldstr, " PRIMARY KEY (`"+strings.Join(index.ColumnName, "`, `")+"`)")
 					} else {
-						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` ("+strings.Join(index.ColumnName, "`, `")+"`)")
+						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` (`"+strings.Join(index.ColumnName, "`, `")+"`)")
 					}
 				}
 			}
@@ -552,21 +555,30 @@ func sqlnull(s string) string {
 }
 
 func sqldefault(s *string) string {
-	switch s {
-	case nil:
+	if s == nil {
 		return ""
-	default:
-		return " DEFAULT '" + escape(*s) + "'"
 	}
+	if val, exists := existInArray(*s, defaultStrWithoutQuote); exists {
+		return " DEFAULT " + val
+	}
+	return " DEFAULT '" + escape(*s) + "'"
+}
+
+func existInArray(s string, strArray[] string) (val string, exists bool) {
+	for _, obj := range strArray {
+		if strings.EqualFold(obj, s) {
+			return obj, true
+		}
+	}
+
+	return "", false
 }
 
 func sqlextra(s string) string {
-	switch s {
-	case "":
-		return ""
-	default:
-		return " " + strings.ToUpper(s)
+	if val, exists := existInArray(s, extra); exists {
+		return " " + val
 	}
+	return ""
 }
 
 func sqlcomment(s string) string {
