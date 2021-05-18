@@ -86,7 +86,7 @@ func (f Field) Equal(f2 Field) bool {
 		((f.Collation == nil && f2.Collation == nil) || *f.Collation == *f2.Collation) &&
 		f.Null == f2.Null &&
 		// f.Key == f2.Key &&
-		((f.Default == nil && f2.Default == nil) || *f.Default == *f2.Default) &&
+		((f.Default == nil && f2.Default == nil) || (f.Default != nil && f2.Default != nil && *f.Default == *f2.Default)) &&
 		f.Extra == f2.Extra &&
 		f.Comment == f2.Comment
 }

@@ -15,9 +15,6 @@ type Driver struct {
 	oldDb *sql.DB
 }
 
-var defaultStrWithoutQuote = []string{"CURRENT_TIMESTAMP"}
-var extra = []string{"auto_increment"}
-
 // New creates a new Driver driver.
 // The DSN is documented here: https://github.com/go-sql-driver/mysql#dsn-data-source-name
 func New(newDsn, oldDsn string) (dbdiffer.Differ, error) {
@@ -206,7 +203,7 @@ func (d *Driver) Diff(prefix string) (diff *dbdiffer.Result, err error) {
 					if oldfield.Equal(newfields[pos]) {
 						continue
 					}
-					change.Fields.Change = append(change.Fields.Change, oldfield, newfields[pos])
+					change.Fields.Change = append(change.Fields.Change, newfields[pos])
 				}
 			}
 
@@ -241,7 +238,7 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 			sql := "CREATE TABLE IF NOT EXISTS `" + table.Name + "` ("
 			fieldstr := make([]string, 0)
 			for _, field := range table.Fields.Create {
-				fieldstr = append(fieldstr, "`"+field.Field+"` "+strings.ToUpper(field.Type)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment))
+				fieldstr = append(fieldstr, "`"+field.Field+"` "+field.Type+sqlnull(field.Null)+sqldefault(field.Type, field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment))
 			}
 			for _, index := range table.Indexes.Create {
 				if index.KeyName == "PRIMARY" {
@@ -284,12 +281,12 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 			}
 			if len(table.Fields.Add) > 0 {
 				for _, field := range table.Fields.Add {
-					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` ADD `"+field.Field+"` "+strings.ToUpper(field.Type)+sqlcol(field.Collation)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment)+after(field.After))
+					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` ADD `"+field.Field+"` "+field.Type+sqlcol(field.Collation)+sqlnull(field.Null)+sqldefault(field.Type, field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment)+after(field.After)+";")
 				}
 			}
 			if len(table.Fields.Change) > 0 {
 				for _, field := range table.Fields.Change {
-					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` CHANGE `"+field.Field+"` `"+field.Field+"` "+strings.ToUpper(field.Type)+sqlcol(field.Collation)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment)+";")
+					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` CHANGE `"+field.Field+"` `"+field.Field+"` "+field.Type+sqlcol(field.Collation)+sqlnull(field.Null)+sqldefault(field.Type, field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment)+";")
 				}
 			}
 			if len(table.Indexes.Add) > 0 {
@@ -474,31 +471,23 @@ func sqlnull(s string) string {
 	}
 }
 
-func sqldefault(s *string) string {
+func sqldefault(typ string, s *string) string {
 	if s == nil {
 		return ""
 	}
-	if val, exists := existInArray(*s, defaultStrWithoutQuote); exists {
-		return " DEFAULT " + val
+	if strings.Contains(typ, "(") {
+		typ = typ[:strings.Index(typ, "(")]
 	}
-	return " DEFAULT '" + escape(*s) + "'"
-}
-
-func existInArray(s string, strArray []string) (val string, exists bool) {
-	for _, obj := range strArray {
-		if strings.EqualFold(obj, s) {
-			return obj, true
-		}
+	switch strings.ToLower(typ) {
+	case "varchar", "char", "blob", "text", "tinyblob", "tinytext", "mediumblob", "mediumtext", "longblob", "longtext", "enum":
+		return " DEFAULT '" + escape(*s) + "'"
+	default:
+		return " DEFAULT " + *s
 	}
-
-	return "", false
 }
 
 func sqlextra(s string) string {
-	if val, exists := existInArray(s, extra); exists {
-		return " " + val
-	}
-	return ""
+	return " " + strings.Replace(s, "DEFAULT_GENERATED", "", -1) // mysql 8 added this extra, should ignore
 }
 
 func sqlcomment(s string) string {
