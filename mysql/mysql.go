@@ -96,36 +96,40 @@ func (d *Driver) Close() error {
 
 func (d *Driver) Diff(prefix string) (diff *dbdiffer.Result, err error) {
 	//retrive new database structure
-	newtables, err := tables(d.newDb, prefix)
+	newtables, newtablespos, err := tables(d.newDb, prefix)
 	if err != nil {
 		return nil, err
 	}
-	newtablefields := make(map[string]map[string]dbdiffer.Field, len(newtables))
-	newtableindexes := make(map[string]map[string]dbdiffer.Index, len(newtables))
+	newtablefields := make(map[string][]dbdiffer.Field, len(newtables))
+	newtablefieldspos := make(map[string]map[string]int, len(newtables))
+	newtableindexes := make(map[string][]dbdiffer.Index, len(newtables))
+	newtableindexespos := make(map[string]map[string]int, len(newtables))
 	for _, table := range newtables {
-		newtablefields[table.Name], err = fields(d.newDb, table.Name)
+		newtablefields[table.Name], newtablefieldspos[table.Name], err = fields(d.newDb, table.Name)
 		if err != nil {
 			return nil, err
 		}
-		newtableindexes[table.Name], err = indexes(d.newDb, table.Name)
+		newtableindexes[table.Name], newtableindexespos[table.Name], err = indexes(d.newDb, table.Name)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	//retrive old database structure
-	oldtables, err := tables(d.oldDb, prefix)
+	oldtables, oldtablespos, err := tables(d.oldDb, prefix)
 	if err != nil {
 		return nil, err
 	}
-	oldtablefields := make(map[string]map[string]dbdiffer.Field, len(oldtables))
-	oldtableindexes := make(map[string]map[string]dbdiffer.Index, len(oldtables))
+	oldtablefields := make(map[string][]dbdiffer.Field, len(oldtables))
+	oldtablefieldspos := make(map[string]map[string]int, len(oldtables))
+	oldtableindexes := make(map[string][]dbdiffer.Index, len(oldtables))
+	oldtableindexespos := make(map[string]map[string]int, len(oldtables))
 	for _, table := range oldtables {
-		oldtablefields[table.Name], err = fields(d.oldDb, table.Name)
+		oldtablefields[table.Name], oldtablefieldspos[table.Name], err = fields(d.oldDb, table.Name)
 		if err != nil {
 			return nil, err
 		}
-		oldtableindexes[table.Name], err = indexes(d.oldDb, table.Name)
+		oldtableindexes[table.Name], oldtableindexespos[table.Name], err = indexes(d.oldDb, table.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -133,167 +137,92 @@ func (d *Driver) Diff(prefix string) (diff *dbdiffer.Result, err error) {
 
 	//compare
 	result := dbdiffer.Result{
-		Tables: struct {
-			Drop   map[string]dbdiffer.Table
-			Create map[string]dbdiffer.Table
-			Change map[string]map[string]string
-		}{
-			Drop:   map[string]dbdiffer.Table{},
-			Create: map[string]dbdiffer.Table{},
-			Change: map[string]map[string]string{},
-		},
-		Fields: struct {
-			Create map[string]map[string]dbdiffer.Field
-			Drop   map[string]map[string]dbdiffer.Field
-			Change map[string]map[string]dbdiffer.Field
-			Add    map[string]map[string]dbdiffer.Field
-		}{
-			Create: map[string]map[string]dbdiffer.Field{},
-			Drop:   map[string]map[string]dbdiffer.Field{},
-			Change: map[string]map[string]dbdiffer.Field{},
-			Add:    map[string]map[string]dbdiffer.Field{},
-		},
-		Indexes: struct {
-			Create map[string]map[string]dbdiffer.Index
-			Change map[string]map[string]dbdiffer.Index
-			Add    map[string]map[string]dbdiffer.Index
-			Drop   map[string]map[string]dbdiffer.Index
-		}{
-			Create: map[string]map[string]dbdiffer.Index{},
-			Change: map[string]map[string]dbdiffer.Index{},
-			Add:    map[string]map[string]dbdiffer.Index{},
-			Drop:   map[string]map[string]dbdiffer.Index{},
-		},
+		Drop:   []dbdiffer.Table{},
+		Create: []dbdiffer.Table{},
+		Change: []dbdiffer.Table{},
 	}
 
 	//table
-	for oldname, olddetail := range oldtables {
-		//在新表中不存在，drop
-		if _, exist := newtables[oldname]; !exist {
-			result.Tables.Drop[oldname] = olddetail
+	for _, olddetail := range oldtables {
+		//table is not exist in new database, drop it
+		if _, exist := newtablespos[olddetail.Name]; !exist {
+			result.Drop = append(result.Drop, olddetail)
 		}
 	}
-	for newname, newdetail := range newtables {
-		//旧表中没有，新建表，新建fields，新建index
-		if olddetail, exist := oldtables[newname]; !exist {
-			result.Tables.Create[newname] = newdetail
-			result.Fields.Create[newname] = newtablefields[newname]
-			result.Indexes.Create[newname] = newtableindexes[newname]
+	for _, newdetail := range newtables {
+		//create tables, create fields, create indexes
+		if _, exist := oldtablespos[newdetail.Name]; !exist {
+			newdetail.Fields.Create = newtablefields[newdetail.Name]
+			newdetail.Indexes.Create = newtableindexes[newdetail.Name]
+			result.Create = append(result.Create, newdetail)
 		} else {
-			//对比表属性
-			change := make(map[string]string, 0)
-			if newdetail.Name != olddetail.Name {
-				change["Name"] = newdetail.Name
+			//diff tables
+			change := dbdiffer.Table{
+				Name:    newdetail.Name,
+				Fields:  dbdiffer.ResultFields{},
+				Indexes: dbdiffer.ResultIndexes{},
 			}
-			if newdetail.Engine != olddetail.Engine {
-				change["Engine"] = newdetail.Engine
+			olddetail := oldtables[oldtablespos[newdetail.Name]]
+			if !olddetail.Equal(newdetail) {
+				change = newdetail
 			}
-			if newdetail.RowFormat != olddetail.RowFormat {
-				change["RowFormat"] = newdetail.RowFormat
+
+			newindexes := newtableindexes[newdetail.Name]
+			newindexespos := newtableindexespos[newdetail.Name]
+			oldindexes := oldtableindexes[olddetail.Name]
+			oldindexespos := oldtableindexespos[olddetail.Name]
+
+			for _, oldindex := range oldindexes {
+				if pos, exist := newindexespos[oldindex.KeyName]; !exist {
+					// drop index
+					change.Indexes.Drop = append(change.Indexes.Drop, oldindex)
+				} else {
+					// alter index
+					if oldindex.Equal(newindexes[pos]) {
+						continue
+					}
+					change.Indexes.Drop = append(change.Indexes.Drop, oldindex)
+					change.Indexes.Add = append(change.Indexes.Add, newindexes[pos])
+				}
 			}
-			// if newdetail.Options != olddetail.Options {
-			// 	change["Options"] = newdetail.Options
-			// }
-			if newdetail.Collation != olddetail.Collation {
-				change["Collation"] = newdetail.Collation
+			for _, newindex := range newindexes {
+				if _, exist := oldindexespos[newindex.KeyName]; !exist {
+					// add index
+					change.Indexes.Add = append(change.Indexes.Add, newindex)
+				}
 			}
-			if newdetail.Comment != olddetail.Comment {
-				change["Comment"] = newdetail.Comment
+
+			newfields := newtablefields[newdetail.Name]
+			newfieldspos := newtablefieldspos[newdetail.Name]
+			oldfields := oldtablefields[olddetail.Name]
+			oldfieldspos := oldtablefieldspos[olddetail.Name]
+
+			for _, oldfield := range oldfields {
+				if pos, exist := newfieldspos[oldfield.Field]; !exist {
+					// drop field
+					change.Fields.Drop = append(change.Fields.Drop, oldfield)
+				} else {
+					// alter field
+					if oldfield.Equal(newfields[pos]) {
+						continue
+					}
+					change.Fields.Change = append(change.Fields.Change, oldfield, newfields[pos])
+				}
 			}
-			if len(change) > 0 {
-				result.Tables.Change[newname] = change
+
+			for _, newfield := range newfields {
+				if _, exist := oldfieldspos[newfield.Field]; !exist {
+					// add field
+					change.Fields.Add = append(change.Fields.Add, newfield)
+				}
+			}
+
+			if !change.IsEmpty() {
+				result.Change = append(result.Change, change)
 			}
 		}
 	}
 
-	//index
-	for tablename, oldindexes := range oldtableindexes {
-		if newindexes, exists := newtableindexes[tablename]; exists {
-			for indexname, indexdetail := range oldindexes {
-				if _, exists := newindexes[indexname]; !exists {
-					//索引在新表中不存在， 删除索引
-					if result.Indexes.Drop[tablename] == nil {
-						result.Indexes.Drop[tablename] = map[string]dbdiffer.Index{}
-					}
-					result.Indexes.Drop[tablename][indexname] = indexdetail
-				}
-			}
-		} else {
-			if _, exists := result.Tables.Drop[tablename]; !exists {
-				//如果表不被删除，则单独删除这个表的这些索引
-				result.Indexes.Drop[tablename] = map[string]dbdiffer.Index{}
-				for indexname, indexdetail := range oldindexes {
-					result.Indexes.Drop[tablename][indexname] = indexdetail
-				}
-			}
-		}
-	}
-	for tablename, newindexes := range newtableindexes {
-		if oldindexes, exists := oldtableindexes[tablename]; exists {
-			for indexname, indexdetail := range newindexes {
-				if oldindex, exists := oldindexes[indexname]; exists {
-					//对比内容
-					if !indexdetail.Equal(&oldindex) {
-						//删除旧索引
-						if result.Indexes.Drop[tablename] == nil {
-							result.Indexes.Drop[tablename] = map[string]dbdiffer.Index{}
-						}
-						result.Indexes.Drop[tablename][indexname] = oldindex
-						//创建新索引
-						if result.Indexes.Add[tablename] == nil {
-							result.Indexes.Add[tablename] = map[string]dbdiffer.Index{}
-						}
-						result.Indexes.Add[tablename][indexname] = oldindex
-					}
-				} else {
-					//需要添加的索引
-					if result.Indexes.Add[tablename] == nil {
-						result.Indexes.Add[tablename] = map[string]dbdiffer.Index{}
-					}
-					result.Indexes.Add[tablename][indexname] = indexdetail
-				}
-			}
-		}
-	}
-
-	//fields
-	for tablename, oldfields := range oldtablefields {
-		if newfields, exists := newtablefields[tablename]; exists {
-			for fieldname, field := range oldfields {
-				if _, exists := newfields[fieldname]; !exists {
-					//删除字段
-					if result.Fields.Drop[tablename] == nil {
-						result.Fields.Drop[tablename] = map[string]dbdiffer.Field{}
-					}
-					result.Fields.Drop[tablename][fieldname] = field
-				}
-			}
-		}
-	}
-	for tablename, newfields := range newtablefields {
-		if oldfields, exists := oldtablefields[tablename]; exists {
-			lastfield := ""
-			for fieldname, field := range newfields {
-				if oldfield, exists := oldfields[fieldname]; exists {
-					//字段存在，对比内容
-					if !field.Equal(&oldfield) {
-						if result.Fields.Change[tablename] == nil {
-							result.Fields.Change[tablename] = map[string]dbdiffer.Field{}
-						}
-						result.Fields.Change[tablename][fieldname] = field
-					}
-				} else {
-					//字段不存在，添加字段
-					field.After = lastfield
-					if result.Fields.Add[tablename] == nil {
-						result.Fields.Add[tablename] = map[string]dbdiffer.Field{}
-					}
-					result.Fields.Add[tablename][fieldname] = field
-				}
-				lastfield = fieldname
-			}
-		}
-	}
 	return &result, nil
 }
 
@@ -302,92 +231,75 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	if result.IsEmpty() {
 		return sqls, nil
 	}
-	if len(result.Tables.Drop) > 0 {
-		for tablename := range result.Tables.Drop {
-			sqls = append(sqls, "DROP TABLE `"+tablename+"`;")
+	if len(result.Drop) > 0 {
+		for _, table := range result.Drop {
+			sqls = append(sqls, "DROP TABLE IF EXISTS `"+table.Name+"`;")
 		}
 	}
-	if len(result.Tables.Create) > 0 {
-		for tablename, tabledetail := range result.Tables.Create {
-			fields, exists := result.Fields.Create[tablename]
-			if !exists {
-				return nil, errors.New("fail get fields to create table")
-			}
-			sql := "CREATE TABLE `" + tablename + "` ("
+	if len(result.Create) > 0 {
+		for _, table := range result.Create {
+			sql := "CREATE TABLE IF NOT EXISTS `" + table.Name + "` ("
 			fieldstr := make([]string, 0)
-			for _, field := range fields {
+			for _, field := range table.Fields.Create {
 				fieldstr = append(fieldstr, "`"+field.Field+"` "+strings.ToUpper(field.Type)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment))
 			}
-			if indexes, exists := result.Indexes.Create[tablename]; exists {
-				for _, index := range indexes {
-					if index.KeyName == "PRIMARY" {
-						fieldstr = append(fieldstr, " PRIMARY KEY (`"+strings.Join(index.ColumnName, "`, `")+"`)")
-					} else {
-						fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` (`"+strings.Join(index.ColumnName, "`, `")+"`)")
-					}
+			for _, index := range table.Indexes.Create {
+				if index.KeyName == "PRIMARY" {
+					fieldstr = append(fieldstr, " PRIMARY KEY (`"+strings.Join(index.ColumnName, "`, `")+"`)")
+				} else {
+					fieldstr = append(fieldstr, sqluniq(index.NonUnique)+" `"+index.KeyName+"` (`"+strings.Join(index.ColumnName, "`, `")+"`)")
 				}
 			}
-			chars := strings.Split(tabledetail.Collation, "_")
-			sql += strings.Join(fieldstr, ", ") + ") ENGINE = " + tabledetail.Engine + " DEFAULT CHARSET = " + chars[0]
-			sqls = append(sqls, sql+";")
+			chars := strings.Split(table.Collation, "_")
+			sql += strings.Join(fieldstr, ", ") + ") ENGINE = " + table.Engine + " DEFAULT CHARSET = " + chars[0] + ";"
+			sqls = append(sqls, sql)
 		}
 	}
-	if len(result.Tables.Change) > 0 {
-		for tablename, tabledetail := range result.Tables.Change {
-			if len(tabledetail) > 0 {
-				sql := "ALTER TABLE `" + tablename + "`"
-				for k, v := range tabledetail {
-					if k == "Collation" {
-						chars := strings.Split(v, "_")
-						sql += " DEFAULT CHARACTER SET " + chars[0] + " COLLATE " + v
-					} else {
-						sql += " " + strings.ToUpper(k) + " = " + v
-					}
-				}
+	if len(result.Change) > 0 {
+		for _, table := range result.Change {
+			if table.Engine != "" || table.RowFormat != "" || table.Comment != "" || table.Collation != "" {
+				// table structure has changed
+				sql := "ALTER TABLE `" + table.Name + "`"
+				sql += " ENGIINE = '" + table.Engine + "'"
+				sql += " ROWFORMAT = '" + table.RowFormat + "'"
+				sql += " COMMENT = '" + table.Comment + "'"
+				chars := strings.Split(table.Collation, "_")
+				sql += " DEFAULT CHARACTER SET " + chars[0] + " COLLATE " + table.Collation
+
 				sqls = append(sqls, sql+";")
 			}
-		}
-	}
-	if len(result.Indexes.Drop) > 0 {
-		for tablename, indexes := range result.Indexes.Drop {
-			for name := range indexes {
-				if name == "PRIMARY" {
-					sqls = append(sqls, "ALTER TABLE `"+tablename+"` DROP PRIMARY KEY;")
-				} else {
-					sqls = append(sqls, "ALTER TABLE `"+tablename+"` DROP INDEX `"+name+"`;")
+			if len(table.Indexes.Drop) > 0 {
+				for _, index := range table.Indexes.Drop {
+					if index.KeyName == "PRIMARY" {
+						sqls = append(sqls, "ALTER TABLE `"+index.Table+"` DROP PRIMARY KEY;")
+					} else {
+						sqls = append(sqls, "ALTER TABLE `"+index.Table+"` DROP INDEX `"+index.KeyName+"`;")
+					}
 				}
 			}
-		}
-	}
-	if len(result.Fields.Drop) > 0 {
-		for tablename, fields := range result.Fields.Drop {
-			for name := range fields {
-				sqls = append(sqls, "ALTER TABLE `"+tablename+"` DROP `"+name+"`;")
-			}
-		}
-	}
-	if len(result.Fields.Add) > 0 {
-		for tablename, fields := range result.Fields.Add {
-			for name, detail := range fields {
-				sqls = append(sqls, "ALTER TABLE `"+tablename+"` ADD `"+name+"` "+strings.ToUpper(detail.Type)+sqlcol(detail.Collation)+sqlnull(detail.Null)+sqldefault(detail.Default)+sqlextra(detail.Extra)+sqlcomment(detail.Comment)+after(detail.After))
-			}
-		}
-	}
-	if len(result.Indexes.Add) > 0 {
-		for tablename, indexes := range result.Indexes.Add {
-			for name, detail := range indexes {
-				if name == "PRIMARY" {
-					sqls = append(sqls, "ALTER TABLE `"+tablename+"` ADD PRIMARY KEY (`"+strings.Join(detail.ColumnName, "`, `")+"`);")
-				} else {
-					sqls = append(sqls, "ALTER TABLE `"+tablename+"` ADD "+sqluniq(detail.NonUnique)+" `"+name+"` (`"+strings.Join(detail.ColumnName, "`, `")+"`);")
+			if len(table.Fields.Drop) > 0 {
+				for _, field := range table.Fields.Drop {
+					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` DROP `"+field.Field+"`;")
 				}
 			}
-		}
-	}
-	if len(result.Fields.Change) > 0 {
-		for tablename, fields := range result.Fields.Change {
-			for name, detail := range fields {
-				sqls = append(sqls, "ALTER TABLE `"+tablename+"` CHANGE `"+name+"` `"+name+"` "+strings.ToUpper(detail.Type)+sqlcol(detail.Collation)+sqlnull(detail.Null)+sqldefault(detail.Default)+sqlextra(detail.Extra)+sqlcomment(detail.Comment)+";")
+			if len(table.Fields.Add) > 0 {
+				for _, field := range table.Fields.Add {
+					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` ADD `"+field.Field+"` "+strings.ToUpper(field.Type)+sqlcol(field.Collation)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment)+after(field.After))
+				}
+			}
+			if len(table.Fields.Change) > 0 {
+				for _, field := range table.Fields.Change {
+					sqls = append(sqls, "ALTER TABLE `"+table.Name+"` CHANGE `"+field.Field+"` `"+field.Field+"` "+strings.ToUpper(field.Type)+sqlcol(field.Collation)+sqlnull(field.Null)+sqldefault(field.Default)+sqlextra(field.Extra)+sqlcomment(field.Comment)+";")
+				}
+			}
+			if len(table.Indexes.Add) > 0 {
+				for _, index := range table.Indexes.Add {
+					if index.KeyName == "PRIMARY" {
+						sqls = append(sqls, "ALTER TABLE `"+index.Table+"` ADD PRIMARY KEY (`"+strings.Join(index.ColumnName, "`, `")+"`);")
+					} else {
+						sqls = append(sqls, "ALTER TABLE `"+index.Table+"` ADD "+sqluniq(index.NonUnique)+" `"+index.KeyName+"` (`"+strings.Join(index.ColumnName, "`, `")+"`);")
+					}
+				}
 			}
 		}
 	}
@@ -395,17 +307,18 @@ func (d *Driver) Generate(result *dbdiffer.Result) ([]string, error) {
 	return sqls, nil
 }
 
-func tables(db *sql.DB, prefix string) (map[string]dbdiffer.Table, error) {
+func tables(db *sql.DB, prefix string) ([]dbdiffer.Table, map[string]int, error) {
 	query := "SHOW TABLE STATUS;"
 	if prefix != "" {
 		query = "SHOW TABLE STATUS LIKE '" + prefix + "%';"
 	}
 	resultrows, err := db.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resultrows.Close()
-	tables := make(map[string]dbdiffer.Table)
+	tablespos := make(map[string]int)
+	tables := make([]dbdiffer.Table, 0)
 	for resultrows.Next() {
 
 		var (
@@ -429,9 +342,9 @@ func tables(db *sql.DB, prefix string) (map[string]dbdiffer.Table, error) {
 			comment         string
 		)
 		if err := resultrows.Scan(&name, &engine, &version, &row_format, &rows, &avg_row_length, &data_length, &max_data_length, &index_length, &data_free, &auto_increment, &create_time, &update_time, &check_time, &collection, &checksum, &create_options, &comment); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		tables[name] = dbdiffer.Table{
+		tables = append(tables, dbdiffer.Table{
 			Name:      name,
 			Engine:    engine,
 			Version:   version,
@@ -439,18 +352,21 @@ func tables(db *sql.DB, prefix string) (map[string]dbdiffer.Table, error) {
 			Options:   create_options,
 			Comment:   comment,
 			Collation: collection,
-		}
+		})
+		tablespos[name] = len(tables) - 1
 	}
-	return tables, nil
+	return tables, tablespos, nil
 }
 
-func fields(db *sql.DB, table string) (map[string]dbdiffer.Field, error) {
+func fields(db *sql.DB, table string) ([]dbdiffer.Field, map[string]int, error) {
 	resultrows, err := db.Query("SHOW FULL FIELDS FROM `" + table + "`;")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resultrows.Close()
-	fields := make(map[string]dbdiffer.Field, 0)
+	fieldspos := make(map[string]int)
+	fields := make([]dbdiffer.Field, 0)
+	lastfield := ""
 	for resultrows.Next() {
 		var (
 			field      string
@@ -464,9 +380,9 @@ func fields(db *sql.DB, table string) (map[string]dbdiffer.Field, error) {
 			comment    string
 		)
 		if err := resultrows.Scan(&field, &typ, &collation, &null, &key, &def, &extra, &privileges, &comment); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		fields[field] = dbdiffer.Field{
+		fields = append(fields, dbdiffer.Field{
 			Field:     field,
 			Type:      typ,
 			Collation: collation,
@@ -475,26 +391,30 @@ func fields(db *sql.DB, table string) (map[string]dbdiffer.Field, error) {
 			Default:   def,
 			Extra:     extra,
 			Comment:   comment,
-		}
+			After:     lastfield,
+		})
+		fieldspos[field] = len(fields) - 1
+		lastfield = field
 	}
-	return fields, nil
+	return fields, fieldspos, nil
 }
 
-func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
+func indexes(db *sql.DB, table string) ([]dbdiffer.Index, map[string]int, error) {
 	resultrows, err := db.Query("SHOW INDEX FROM `" + table + "`;")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resultrows.Close()
 	columns, err := resultrows.Columns()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	column_len := len(columns)
 	if column_len != 13 && column_len != 15 {
-		return nil, fmt.Errorf("returned %d columns while listing index", len(columns))
+		return nil, nil, fmt.Errorf("returned %d columns while listing index", len(columns))
 	}
-	indexes := make(map[string]dbdiffer.Index)
+	indexes := make([]dbdiffer.Index, 0)
+	indexpos := make(map[string]int)
 	for resultrows.Next() {
 		var (
 			table         string
@@ -516,19 +436,18 @@ func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
 		switch column_len {
 		case 13:
 			if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		case 15:
 			if err := resultrows.Scan(&table, &non_unique, &key_name, &seq_in_index, &column_name, &collation, &cardinality, &sub_part, &packed, &null, &index_type, &comment, &index_comment, &visible, &expression); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
-		if idx, exist := indexes[key_name]; exist {
-			idx.ColumnName = append(idx.ColumnName, column_name)
-			indexes[key_name] = idx
+		if pos, exist := indexpos[key_name]; exist {
+			indexes[pos].ColumnName = append(indexes[pos].ColumnName, column_name)
 		} else {
-			indexes[key_name] = dbdiffer.Index{
+			indexes = append(indexes, dbdiffer.Index{
 				Table:        table,
 				NonUnique:    non_unique,
 				KeyName:      key_name,
@@ -537,10 +456,11 @@ func indexes(db *sql.DB, table string) (map[string]dbdiffer.Index, error) {
 				IndexType:    index_type,
 				Comment:      comment,
 				IndexComment: index_comment,
-			}
+			})
+			indexpos[key_name] = len(indexes) - 1
 		}
 	}
-	return indexes, nil
+	return indexes, indexpos, nil
 }
 
 func sqlnull(s string) string {

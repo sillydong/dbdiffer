@@ -31,27 +31,30 @@ func TestMain(m *testing.M) {
 }
 
 func TestTables(t *testing.T) {
-	tb, err := tables(db, "")
+	tb, tbp, err := tables(db, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%+v", tb)
+	t.Logf("%+v\n", tb)
+	t.Logf("%+v\n", tbp)
 }
 
 func TestFields(t *testing.T) {
-	fids, err := fields(db, "admin")
+	fids, fidsp, err := fields(db, "redispatch")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%+v", fids)
+	t.Logf("%+v\n", fids)
+	t.Logf("%+v\n", fidsp)
 }
 
 func TestIndexes(t *testing.T) {
-	idxs, err := indexes(db, "admin")
+	idxs, idxsp, err := indexes(db, "redispatch_item")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%+v", idxs)
+	t.Logf("%+v\n", idxs)
+	t.Logf("%+v", idxsp)
 }
 
 func TestDiff(t *testing.T) {
