@@ -10,6 +10,12 @@ import (
 	"github.com/sillydong/dbdiffer"
 )
 
+const MySQL string = "mysql"
+
+func init() {
+	dbdiffer.DriverList = append(dbdiffer.DriverList, MySQL)
+}
+
 type Driver struct {
 	newDb *sql.DB
 	oldDb *sql.DB

@@ -4,6 +4,8 @@ import (
 	"reflect"
 )
 
+var DriverList []string = []string{}
+
 type Differ interface {
 	Close() error
 	Diff(prefix string) (*Result, error)
